@@ -7,7 +7,35 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+
+def _looks_valid(key: str) -> bool:
+    return bool(key) and not key.startswith("여기에")
+
+
+def _read_api_key() -> str:
+    """API 키를 찾는 순서: 환경 변수(.env 포함) → Streamlit Secrets(배포했을 때).
+
+    Streamlit Community Cloud 의 Secrets 는 맨 위에 적은 값만 환경 변수로도 들어오고,
+    [openai] 같은 묶음 안에 넣으면 환경 변수로 들어오지 않아서 둘 다 확인합니다.
+    """
+    key = os.getenv("OPENAI_API_KEY", "").strip().strip('"').strip("'")
+    if _looks_valid(key):
+        return key
+    try:
+        import streamlit as st
+        sec = st.secrets
+        for cand in (sec.get("OPENAI_API_KEY"),
+                     (sec.get("openai") or {}).get("api_key"),
+                     (sec.get("openai") or {}).get("OPENAI_API_KEY")):
+            cand = str(cand or "").strip()
+            if _looks_valid(cand):
+                return cand
+    except Exception:   # 내 컴퓨터에 secrets.toml 이 없으면 여기로 옴 (정상)
+        pass
+    return key
+
+
+OPENAI_API_KEY = _read_api_key()
 
 # 평가·질문 생성용 모델 (2026-11 기준 OpenAI 문서에서 확인한 저가 모델)
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-5.6-luna").strip()
@@ -34,4 +62,4 @@ ANSWER_TIME_CHOICES = [60, 90, 120]
 
 
 def has_api_key() -> bool:
-    return bool(OPENAI_API_KEY) and not OPENAI_API_KEY.startswith("여기에")
+    return _looks_valid(OPENAI_API_KEY)
